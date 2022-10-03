@@ -2,15 +2,21 @@
 # the events are published as JSON strings
 
 # import the libraries
+import random
 import pandas as pd
 import json
 import socket
 import datetime
+import time
 from confluent_kafka import Producer
 from pathlib import Path
 
 # set up some variables
 adclicktopic = "adclicks"
+
+minLatency = 500
+maxLatency = 1000
+doLoop = False
 
 # get the path to the data file
 # we use the original file with adclicks
@@ -75,6 +81,19 @@ producer = init_producer()
 # create events and publish them
 for i in range(numberRows):
     event = create_event(i)
-    publish_event(producer, adclicktopic, event, str(i))
+
+    if not doLoop :
+        val = input("Press 'Y' to continue, 'N' to exit.")
+    
+        if val == "Y":
+            publish_event(producer, adclicktopic, event, str(i))
+         
+        if val == "N":
+          break
+    else:
+        publish_event(producer, adclicktopic, event, str(i))
+        time.sleep(random.randint(minLatency, maxLatency)/1000)
+
+print("Done")
 
 

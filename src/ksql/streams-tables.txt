@@ -1,0 +1,68 @@
+# creates streams and tables for the realtime ml
+
+# log in to ksqlDB. The assumption here is that it is in a Docker environment
+# this needs to be run in the Docker command window
+docker exec -it ksqldb-cli ksql http://ksqldb-server:8088
+
+# set offset to earliest
+SET 'auto.offset.reset' = 'earliest';
+
+# see if we have any data in the "base" topics
+print adclicks/models;
+
+# create a table for model lookup against the topic above
+
+create or replace table tb_model (
+  ModelId int primary key,
+  ModelName varchar,
+  Model varchar
+)
+WITH(KAFKA_TOPIC='models',
+     PARTITIONS=1,
+     VALUE_FORMAT='JSON');
+
+
+# create a "raw" stream from adclicks topic
+create or replace stream adclicks_raw (
+EventId int,
+TimeSpent int,
+Age int,
+AreaIncome double,
+DailyUsage double,
+IsMale int,
+EventTime varchar)
+WITH (KAFKA_TOPIC='adclicks',
+      PARTITIONS=1,
+      VALUE_FORMAT='JSON');
+
+create or replace stream adclicks_ml_1
+AS
+select EventId, 1 AS ModelId, TimeSpent,
+Age, AreaIncome, DailyUsage, IsMale,
+EventTime
+FROM adclicks_raw;
+  
+
+create or replace stream models_raw (
+ModelId int,
+ModelName varchar,
+Model varchar)
+with (kafka_topic='models',
+      partitions=1,
+      value_format='JSON');
+
+#  if we have data in the models topic, check it works
+select * from models_raw emit changes; 
+
+# from the above stream, we can now create a table
+# the table has a backing topic, that should be created upfront
+# but here we let Kafka create it for us
+
+create or replace table tb_model (
+  ModelId int primary key,
+  ModelName varchar,
+  Model varchar
+)
+WITH(KAFKA_TOPIC='ML_MODEL',
+     PARTITIONS=1,
+     VALUE_FORMAT='JSON');
