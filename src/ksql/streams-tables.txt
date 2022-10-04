@@ -71,7 +71,7 @@ FROM adclicks_raw;
 create or replace stream event_to_score_stream
 with (kafka_topic='event_to_score', partitions=1)
 as   
-select EventId, ml.ModelId, TimeSpent, Age, AreaIncome, DailyUsage, IsMale, EventTime, ModelName, Model
+select AS_VALUE(EventId) AS EventId, ml.ModelId AS ModelId, TimeSpent, Age, AreaIncome, DailyUsage, IsMale, EventTime, ModelName, Model
 from adclicks_ml_1 ml
 join tb_model m
 on ml.ModelId = m.ModelId
