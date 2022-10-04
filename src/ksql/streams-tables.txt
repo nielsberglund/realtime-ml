@@ -10,39 +10,7 @@ SET 'auto.offset.reset' = 'earliest';
 # see if we have any data in the "base" topics
 print adclicks/models;
 
-# create a table for model lookup against the topic above
-
-create or replace table tb_model (
-  ModelId int primary key,
-  ModelName varchar,
-  Model varchar
-)
-WITH(KAFKA_TOPIC='models',
-     PARTITIONS=1,
-     VALUE_FORMAT='JSON');
-
-
-# create a "raw" stream from adclicks topic
-create or replace stream adclicks_raw (
-EventId int,
-TimeSpent int,
-Age int,
-AreaIncome double,
-DailyUsage double,
-IsMale int,
-EventTime varchar)
-WITH (KAFKA_TOPIC='adclicks',
-      PARTITIONS=1,
-      VALUE_FORMAT='JSON');
-
-create or replace stream adclicks_ml_1
-AS
-select EventId, 1 AS ModelId, TimeSpent,
-Age, AreaIncome, DailyUsage, IsMale,
-EventTime
-FROM adclicks_raw;
-  
-
+# create a stream against the models topic
 create or replace stream models_raw (
 ModelId int,
 ModelName varchar,
@@ -54,15 +22,58 @@ with (kafka_topic='models',
 #  if we have data in the models topic, check it works
 select * from models_raw emit changes; 
 
-# from the above stream, we can now create a table
-# the table has a backing topic, that should be created upfront
+# create a re-keyed stream with an underlying topic for the models
+# in production the topic that should be created upfront
 # but here we let Kafka create it for us
+CREATE OR REPLACE STREAM models_rekeyed
+WITH (KAFKA_TOPIC='models_ml', PARTITIONS=1)
+AS
+SELECT a.ModelId AS ModelId,
+       a.ModelName AS ModelName,
+       a.Model AS Model
+FROM models_raw a
+PARTITION BY a.ModelId
+EMIT CHANGES;
 
+# finally we can create a table against the new topic
 create or replace table tb_model (
   ModelId int primary key,
   ModelName varchar,
   Model varchar
 )
-WITH(KAFKA_TOPIC='ML_MODEL',
+WITH(KAFKA_TOPIC='models_ml',
      PARTITIONS=1,
      VALUE_FORMAT='JSON');
+
+
+# create a "raw" stream from adclicks topic
+create or replace stream adclicks_raw (
+EventId int,
+TimeSpent double,
+Age int,
+AreaIncome double,
+DailyUsage double,
+IsMale int,
+EventTime varchar)
+WITH (KAFKA_TOPIC='adclicks',
+      PARTITIONS=1,
+      VALUE_FORMAT='JSON');
+
+# create stream enriched with a model id (as it is not in the event)
+create or replace stream adclicks_ml_1
+AS
+select EventId, 1 AS ModelId, TimeSpent,
+Age, AreaIncome, DailyUsage, IsMale,
+EventTime
+FROM adclicks_raw;
+
+# create the final stream that we use to join against the model table and output to a topic
+create or replace stream event_to_score_stream
+with (kafka_topic='event_to_score', partitions=1)
+as   
+select EventId, ml.ModelId, TimeSpent, Age, AreaIncome, DailyUsage, IsMale, EventTime, ModelName, Model
+from adclicks_ml_1 ml
+join tb_model m
+on ml.ModelId = m.ModelId
+partition by EventId
+emit changes;

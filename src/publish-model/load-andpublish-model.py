@@ -59,7 +59,7 @@ def delivery_report(err, msg):
 # the model is published as a string
 def publish_model(producer, topic, event, msgKey):
     # publish the model
-    producer.produce(topic, key=msgKey, value=event, callback=delivery_report)
+    producer.produce(topic, event, key=msgKey, callback=delivery_report)
     # flush the producer
     producer.flush() 
 
